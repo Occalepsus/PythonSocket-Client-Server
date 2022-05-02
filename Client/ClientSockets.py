@@ -1,6 +1,7 @@
 import socket
 import time
 from threading import Thread
+import queue
 
 
 class ClientSocket(Thread):
@@ -77,6 +78,7 @@ class InputSocket(ClientSocket):
 class OutputSocket(ClientSocket):
     def __init__(self, host: str, port: int, channel):
         ClientSocket.__init__(self, host, port, channel)
+        self.sending_buffer = queue.Queue()
 
     def set_connected(self, connected: bool):
         self.channel.isOutputConnected = connected
@@ -90,5 +92,5 @@ class OutputSocket(ClientSocket):
             print('Data sent to port {}: {}'.format(self.port, msg))
 
     def handle(self):
-        if not self.channel.isRunning:
-            self.socket.close()
+        if not self.sending_buffer.empty():
+            self.send(self.sending_buffer.get())

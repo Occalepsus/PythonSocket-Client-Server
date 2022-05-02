@@ -1,8 +1,7 @@
 import socket
-import sys
 import time
-import traceback
 from threading import Thread
+import queue
 
 
 def create_socket(ip, port):
@@ -86,16 +85,18 @@ class InputSocket(SocketServer):
 class OutputSocket(SocketServer):
     def __init__(self, ip, port, side):
         SocketServer.__init__(self, ip, port, side)
-        self.sending_list = []
+        self.sending_buffer = queue.Queue()
 
     def send(self, data):
         if self.side.is_connected():
             try:
                 self.con.send(data)
-                print('Data sent')
+                print('Data sent: {}'.format(data))
             except socket.timeout as e:
+                self.sending_buffer.put(data)
                 print('Timeout : {}'.format(e))
         else:
+            self.sending_buffer.put(data)
             print('No client connected to send {}'.format(data))
 
     def set_connected(self, con):
@@ -103,6 +104,7 @@ class OutputSocket(SocketServer):
         self.side.isOutputConnected = con
         # print('Client connected: {}'.format(self.side.is_connected()))
 
-    # def handle(self):
-    #     if not self.side.isConnected:
-    #         self.socket.close()
+    def handle(self):
+        if not self.sending_buffer.empty():
+            self.send(self.sending_buffer.get())
+
