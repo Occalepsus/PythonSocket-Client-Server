@@ -1,5 +1,6 @@
 import socket
 import sys
+import time
 import traceback
 from threading import Thread
 
@@ -13,70 +14,95 @@ def create_socket(ip, port):
 
 
 class SocketServer(Thread):
-    def __init__(self, ip, port):
+    def __init__(self, ip, port, side):
         Thread.__init__(self)
         self.ip = ip
         self.port = port
+        self.side = side
         self.socket = create_socket(ip, port)
         self.socket.settimeout(0.5)
-        self.isConnected = False
-        self.isRunning = True
+        self.con = None
 
     def handle(self):
         pass
 
+    def set_connected(self, con):
+        pass
+
     def run(self):
         print("Port {} is ready for connection...".format(self.port))
-        while self.isRunning:
-            if not self.isConnected:
+        while self.side.channel.isRunning:
+            # print(self.side.channel.isRunning)
+            if not self.side.is_connected():
                 try:
-                    (self.socket, (ip, port)) = self.socket.accept()
-                    self.isConnected = True
+                    (self.con, (ip, port)) = self.socket.accept()
+                    self.con.settimeout(0.5)
+                    self.set_connected(True)
                     print("Client {}:{} connected".format(ip, port))
                 except socket.timeout:
-                    continue
+                    pass
             else:
                 try:
+                    # print("Handle...")
                     self.handle()
-                except socket.timeout:
-                    continue
+                    # print("Handle done...")
+                except socket.timeout as e:
+                    pass
+                time.sleep(0.5)
 
-        self.isConnected = False
-        self.socket.shutdown(socket.SHUT_RDWR)
+        self.side.disconnect()
+        # self.set_connected(False)
+        # self.socket.shutdown(socket.SHUT_RDWR)
         self.socket.close()
         print('Socket closed, bye !')
-
-    def stop(self):
-        # self.isConnected = False
-        self.isRunning = False
-        # socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((self.ip, self.port))
-        # self.socket.close()
 
 
 # Receiving data from client
 class InputSocket(SocketServer):
-    def __init__(self, ip: str, port: int, callback):
-        SocketServer.__init__(self, ip, port)
+    def __init__(self, ip: str, port: int, side, callback):
+        SocketServer.__init__(self, ip, port, side)
         self.callback = callback
 
     def handle(self):
-        msg = self.socket.recv(1024)
-        if msg == b'':
-            self.stop()
+        # print("Waiting for message on port {}...".format(self.port))
+        msg = self.con.recv(1024)
+        if msg == b'0':
+            # self.set_connected(False)
+            self.side.disconnect()
+            print('Client on port {} disconnected'.format(self.port))
+        elif msg == b'':
+            print('a')
         else:
             self.callback(msg)
-            print('Data received')
+            print('Data received : {}'.format(msg))
+
+    def set_connected(self, con):
+        # print('Connected: {}'.format(con))
+        self.side.isInputConnected = con
+        # print('Client connected: {}'.format(self.side.is_connected()))
 
 
 # Sending data to client
 class OutputSocket(SocketServer):
-    def __init__(self, ip, port):
-        SocketServer.__init__(self, ip, port)
+    def __init__(self, ip, port, side):
+        SocketServer.__init__(self, ip, port, side)
         self.sending_list = []
 
     def send(self, data):
-        if self.isConnected:
-            self.socket.send(data)
-            print('Data sent')
+        if self.side.is_connected():
+            try:
+                self.con.send(data)
+                print('Data sent')
+            except socket.timeout as e:
+                print('Timeout : {}'.format(e))
         else:
-            print('No client connected')
+            print('No client connected to send {}'.format(data))
+
+    def set_connected(self, con):
+        # print('Connected {}'.format(con))
+        self.side.isOutputConnected = con
+        # print('Client connected: {}'.format(self.side.is_connected()))
+
+    # def handle(self):
+    #     if not self.side.isConnected:
+    #         self.socket.close()

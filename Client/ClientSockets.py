@@ -1,62 +1,94 @@
 import socket
+import time
 from threading import Thread
 
 
 class ClientSocket(Thread):
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, channel):
         Thread.__init__(self)
         self.host = host
         self.port = port
+        self.channel = channel
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.settimeout(0.5)
-        self.isRunning = False
 
-    def start(self):
-        self.socket.connect((self.host, self.port))
-        self.isRunning = True
-        Thread.start(self)
+    def set_connected(self, connected: bool):
+        pass
+
+    def get_connected(self):
+        pass
+
+    def connect(self):
+        if not self.get_connected():
+            try:
+                self.socket.connect((self.host, self.port))
+                self.set_connected(True)
+                print('Connected to ' + self.host + ':' + str(self.port))
+            except socket.error as e:
+                # print("Socket error : " + str(e))
+                pass
 
     def handle(self):
         pass
 
     def run(self):
-        while self.isRunning:
-            try:
-                self.handle()
-            except socket.timeout:
-                continue
-            except socket.error as e:
-                print("Socket error : " + e)
-                break
+        while self.channel.isRunning:
+            if not self.get_connected():
+                self.connect()
+                time.sleep(1)
+            elif self.channel.is_connected():
+                try:
+                    self.handle()
+                except socket.timeout:
+                    continue
+                except socket.error as e:
+                    print("Socket error : " + str(e))
+                    self.channel.stop()
 
-        self.isConnected = False
-        self.socket.shutdown(socket.SHUT_RDWR)
+        self.set_connected(False)
+        # self.socket.shutdown(socket.SHUT_RDWR)
         self.socket.close()
         print('Socket closed, bye !')
 
-    def stop(self):
-        self.isRunning = False
-
 
 class InputSocket(ClientSocket):
-    def __init__(self, host: str, port: int, callback: callable(bytes)):
-        ClientSocket.__init__(self, host, port)
+    def __init__(self, host: str, port: int, channel, callback: callable(bytes)):
+        ClientSocket.__init__(self, host, port, channel)
         self.callback = callback
+
+    def set_connected(self, connected: bool):
+        self.channel.isInputConnected = connected
+
+    def get_connected(self):
+        return self.channel.isInputConnected
 
     def handle(self):
         msg = self.socket.recv(1024)
-        if msg == b'':
-            self.stop()
+        print('Received : ' + str(msg))
+        if msg == b'0' or msg == b'':
+            print('Server disconnected')
+            self.set_connected(False)
+            # time.sleep(5)
         else:
-            print('Data received')
+            print('Data received : {}'.format(msg))
             self.callback(msg)
 
 
 class OutputSocket(ClientSocket):
-    def __init__(self, host: str, port: int):
-        ClientSocket.__init__(self, host, port)
+    def __init__(self, host: str, port: int, channel):
+        ClientSocket.__init__(self, host, port, channel)
+
+    def set_connected(self, connected: bool):
+        self.channel.isOutputConnected = connected
+
+    def get_connected(self):
+        return self.channel.isOutputConnected
 
     def send(self, msg):
-        if self.isRunning:
+        if self.channel.is_connected():
             self.socket.send(msg)
-            print('Data sent')
+            print('Data sent to port {}: {}'.format(self.port, msg))
+
+    def handle(self):
+        if not self.channel.isRunning:
+            self.socket.close()
